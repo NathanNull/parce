@@ -1,6 +1,9 @@
+use crate::parser;
+
 use super::{Parser, ParserIterator, RawParser};
 use fancy_regex::Regex;
-use std::sync::Arc;
+use itertools::Itertools;
+use std::{str::FromStr, sync::Arc};
 
 trait AsStr {
     fn chars(&self) -> impl Iterator<Item = char>;
@@ -49,4 +52,17 @@ fn regex_inner(regex: Regex) -> impl Fn(&str) -> Option<((Arc<str>,), &str)> + C
 pub fn p_regex(s: impl Into<String>) -> impl Parser<str, Out = (Arc<str>,)> {
     let regex = Regex::new(&s.into()).expect("Invalid regex argument");
     RawParser::<str, (Arc<str>,)>(Arc::new(regex_inner(regex)))
+}
+
+pub fn p_alnum() -> impl Parser<str, Out = (Arc<str>,)> {
+    parser!(((c >> c.is_alphanumeric()) * 1..) >> |r| Arc::<str>::from(r.iter().join("").as_str()))
+}
+
+pub fn p_newline() -> impl Parser<str, Out = (char,)> {
+    parser!((!('r' * 0..=1)) & '\n')
+}
+
+pub fn p_n<Int: FromStr + Clone + 'static>() -> impl Parser<str, Out = (Int,)> {
+    parser!(('-' * 0..=1) & ((c >> c.is_ascii_digit()) * ..))
+        .try_map(|(sign, chars)| str::parse::<Int>(&sign.into_iter().chain(chars).join("")).ok())
 }

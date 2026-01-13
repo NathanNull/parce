@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 fancy-regex = "0.17.0"
+itertools = "0.14.0"
