@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 
-pub trait Tuple: Clone {
-    type Destructured: Clone;
+pub trait Tuple: Clone + Send + Sync {
+    type Destructured: Clone + Send + Sync;
     fn from_destructured(input: Self::Destructured) -> Self;
     fn destructure(self) -> Self::Destructured;
 
-    type Prepend<P: Clone>: Tuple;
-    fn prepend<P: Clone>(self, item: P) -> Self::Prepend<P>;
+    type Prepend<P: Clone + Send + Sync>: Tuple;
+    fn prepend<P: Clone + Send + Sync>(self, item: P) -> Self::Prepend<P>;
     type Concat<T: Tuple>: Tuple;
     fn concat<T: Tuple>(self, rhs: T) -> Self::Concat<T>;
 
@@ -15,7 +15,7 @@ pub trait Tuple: Clone {
     fn pop(self) -> (Self::Popped, Self::Pop);
 }
 
-impl<A: Clone> Tuple for (A,) {
+impl<A: Clone + Send + Sync> Tuple for (A,) {
     type Destructured = A;
     fn from_destructured(input: Self::Destructured) -> Self {
         (input,)
@@ -27,8 +27,8 @@ impl<A: Clone> Tuple for (A,) {
         (A)
     }
 
-    type Prepend<P: Clone> = (P, A);
-    fn prepend<P: Clone>(self, item: P) -> Self::Prepend<P> {
+    type Prepend<P: Clone + Send + Sync> = (P, A);
+    fn prepend<P: Clone + Send + Sync>(self, item: P) -> Self::Prepend<P> {
         (item, self.0)
     }
 
@@ -48,14 +48,14 @@ impl<A: Clone> Tuple for (A,) {
 pub enum Never {}
 impl Tuple for () {
     type Destructured = Self;
-    type Prepend<P: Clone> = (P,);
+    type Prepend<P: Clone + Send + Sync> = (P,);
 
     fn from_destructured(input: Self::Destructured) -> Self {
         input
     }
 
     fn destructure(self) -> Self::Destructured {}
-    fn prepend<P: Clone>(self, item: P) -> Self::Prepend<P> {
+    fn prepend<P: Clone + Send + Sync>(self, item: P) -> Self::Prepend<P> {
         (item,)
     }
 
@@ -81,7 +81,7 @@ macro_rules! tuples {
         $(^Last(P,$($tl:ident),*:$slast:ident))?
     );+$(;)?) => {
     $(
-        impl<$($t: Clone,)*$last: Clone> Tuple for ($($t,)*$last,) {
+        impl<$($t: Clone + Send + Sync,)*$last: Clone + Send + Sync> Tuple for ($($t,)*$last,) {
             #[allow(unused_parens)]
             type Destructured = ($($t,)*$last);
             fn from_destructured(input: Self::Destructured) -> Self {
@@ -94,8 +94,8 @@ macro_rules! tuples {
                 ($(self.$i,)*self.$li)
             }
 
-            type Prepend<P: Clone> = <Self as TmpPrepend>::Prepend<P>;
-            fn prepend<P: Clone>(self, item: P) -> Self::Prepend<P> {
+            type Prepend<P: Clone + Send + Sync> = <Self as TmpPrepend>::Prepend<P>;
+            fn prepend<P: Clone + Send + Sync>(self, item: P) -> Self::Prepend<P> {
                 <Self as TmpPrepend>::prepend(self, item)
             }
 
@@ -123,7 +123,7 @@ macro_rules! tuples {
             }
         )?
         $(
-            impl<$($tl: Clone,)*$slast: Clone> TmpPrepend for ($($tl,)*$slast,) {
+            impl<$($tl: Clone + Send + Sync,)*$slast: Clone + Send + Sync> TmpPrepend for ($($tl,)*$slast,) {
                 type Prepend<P> = ((P, $($tl),*), $slast);
                 fn prepend<P>(self, item: P) -> Self::Prepend<P> {
                     #[allow(non_snake_case)]

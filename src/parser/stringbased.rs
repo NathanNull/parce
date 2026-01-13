@@ -18,7 +18,7 @@ impl AsStr for String {
         self.as_str().chars()
     }
 }
-impl<T: AsStr + Clone + 'static> Parser<str> for T {
+impl<T: AsStr + Clone + Send + Sync + 'static> Parser<str> for T {
     type Out = (Arc<str>,);
 
     fn box_clone(&self) -> Arc<dyn Parser<str, Out = Self::Out>> {
@@ -62,7 +62,7 @@ pub fn p_newline() -> impl Parser<str, Out = (char,)> {
     parser!((!('r' * 0..=1)) & '\n')
 }
 
-pub fn p_n<Int: FromStr + Clone + 'static>() -> impl Parser<str, Out = (Int,)> {
+pub fn p_n<Int: FromStr + Clone + Send + Sync + 'static>() -> impl Parser<str, Out = (Int,)> {
     parser!(('-' * 0..=1) & ((c >> c.is_ascii_digit()) * ..))
         .try_map(|(sign, chars)| str::parse::<Int>(&sign.into_iter().chain(chars).join("")).ok())
 }
