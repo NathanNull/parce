@@ -10,8 +10,8 @@ mod tests {
 
     #[test]
     fn basics() {
-        p![(c >> c.is_numeric()), (c >> c.is_numeric())];
-        let p = p![
+        parser![(c >> c.is_numeric()), (c >> c.is_numeric())];
+        let p = parser![
             ('c' >> |_| 15),
             (('h' * 3..=3)?),
             ('c' | (c >> c.is_numeric())),
@@ -34,14 +34,14 @@ mod tests {
 
     #[test]
     fn array() {
-        let p = p!['c', 'd', 'e'];
+        let p = parser!['c', 'd', 'e'];
         assert_eq!(p.parse_full("ced"), None);
         assert_eq!(p.parse_full("cde"), Some(('c', 'd', 'e')));
     }
 
     #[test]
     fn regex() {
-        let p = p!((r r"\w*") & !(r r"\r\n"));
+        let p = parser!((r r"\w*") & !(r r"\r\n"));
         assert_eq!(p.parse_full("as??df \r\n"), None);
         assert_eq!(p.parse_full("asdf\r\n"), Some(Arc::from("asdf")));
     }
@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn custom() {
-        let p = p!(&[TestToken]: (TestToken(0)) & (TestToken(1)));
+        let p = parser!(&[TestToken]: (TestToken(0)) & (TestToken(1)));
         assert_eq!(
             p.parse_full(&[TestToken(0), TestToken(1)]),
             Some((TestToken(0), TestToken(1)))

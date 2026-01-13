@@ -465,13 +465,13 @@ impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Parser<Slice> for RawPars
 }
 
 #[macro_export]
-macro_rules! p {
+macro_rules! parser {
     // Brackets
     (&$ty:ty: ($($rest: tt)+)) => {
-        p!(&$ty: $($rest)+)
+        parser!(&$ty: $($rest)+)
     };
     (&$ty:ty: [$($rest: tt)+]) => {
-        p![&$ty: $($rest)+]
+        parser![&$ty: $($rest)+]
     };
     // Predicates
     (&$ty:ty: $c:ident >> $pred:expr) => {
@@ -482,7 +482,7 @@ macro_rules! p {
     };
     // Maybe
     (&$ty:ty: ! $($lhs: tt)*) => {
-        $crate::parser::Parser::<$ty>::ignore(p!(&$ty: $($lhs)*))
+        $crate::parser::Parser::<$ty>::ignore(parser!(&$ty: $($lhs)*))
     };
     // Regex
     (&$ty:ty: r $regex:expr) => {
@@ -490,15 +490,15 @@ macro_rules! p {
     };
     // And
     (&$ty:ty: $lhs: tt & $($rest: tt)+ ) => {
-        $crate::parser::Parser::<$ty>::and(p!(&$ty: $lhs),(p!(&$ty: $($rest)+)))
+        $crate::parser::Parser::<$ty>::and(parser!(&$ty: $lhs),(parser!(&$ty: $($rest)+)))
     };
     // Or
     (&$ty:ty: $lhs: tt | $($rest: tt)+) => {
-        $crate::parser::Parser::<$ty>::or(p!(&$ty: $lhs),(p!(&$ty: $($rest)+)))
+        $crate::parser::Parser::<$ty>::or(parser!(&$ty: $lhs),(parser!(&$ty: $($rest)+)))
     };
     // Map
     (&$ty:ty: $lhs: tt >> $e:expr) => {
-        $crate::parser::Parser::<$ty>::map(p!(&$ty: $lhs),$e)
+        $crate::parser::Parser::<$ty>::map(parser!(&$ty: $lhs),$e)
     };
     // Recursive
     (&$ty:ty: rec($($r:tt)+)) => {
@@ -506,23 +506,23 @@ macro_rules! p {
     };
     // Repeat
     (&$ty:ty: $lhs: tt * $e:expr) => {
-        $crate::parser::Parser::<$ty>::mul(p!(&$ty: $lhs),$e)
+        $crate::parser::Parser::<$ty>::mul(parser!(&$ty: $lhs),$e)
     };
     // Maybe
     (&$ty:ty: $lhs: tt ?) => {
-        $crate::parser::Parser::<$ty>::maybe(p!(&$ty: $lhs))
+        $crate::parser::Parser::<$ty>::maybe(parser!(&$ty: $lhs))
     };
     // Other stuff
     (&$ty:ty: $lhs: expr) => {
         $lhs
     };
     [&$ty:ty: $($e:tt),*] => {
-        p!(&$ty: $($e)&*)
+        parser!(&$ty: $($e)&*)
     };
     ($($tt:tt)*) => {
-        p!(&str: $($tt)*)
+        parser!(&str: $($tt)*)
     };
     [$($tt:tt)*] => {
-        p!(&str: $($tt)*)
+        parser!(&str: $($tt)*)
     };
 }
