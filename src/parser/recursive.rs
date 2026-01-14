@@ -10,7 +10,7 @@ pub struct Recursive<Slice: TokenSlice + ?Sized, P: Parser<Slice>> {
     _p: PhantomData<Slice>,
 }
 
-impl<Slice: TokenSlice + 'static, Out: Tuple + 'static, P: Parser<Slice, Out = Out> + 'static>
+impl<Slice: TokenSlice + ?Sized + 'static, Out: Tuple + 'static, P: Parser<Slice, Out = Out> + 'static>
     Parser<Slice> for Recursive<Slice, P>
 {
     type Out = Out;
