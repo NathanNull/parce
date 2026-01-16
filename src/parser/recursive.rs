@@ -43,15 +43,15 @@ impl<
 pub fn p_recursive<
     Slice: TokenSlice + ?Sized,
     Out: Tuple + 'static,
-    P: Parser<Slice, Out = Out>,
+    P: Parser<Slice, Out = Out> + 'static,
 >(
-    f: impl FnOnce(Recursive<Slice, P>) -> P,
+    f: impl FnOnce(Arc<dyn Parser<Slice, Out = Out>>) -> P,
 ) -> Arc<P> {
     Arc::<P>::new_cyclic(|arc| {
         let rec = Recursive {
             inner: arc.clone(),
             _p: PhantomData,
         };
-        f(rec)
+        f(rec.box_clone())
     })
 }

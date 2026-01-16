@@ -5,7 +5,7 @@ mod tuple;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::{Parser, ValidToken};
+    use crate::parser::{Parser, ValidToken, recursive::p_recursive};
     use std::sync::Arc;
 
     #[test]
@@ -30,6 +30,14 @@ mod tests {
             Ok((15, Some(vec!['h'; 3]), '7', 'b', 'c', None))
         );
         assert!(p.parse_full("test").is_err());
+    }
+
+    #[test]
+    fn recursive() {
+        let p = p_recursive::<str, (String,), _>(|p| {
+            ' '.and(p.maybe())
+                .map(|(c, rest)| c.to_string() + rest.unwrap_or(String::new()).as_str())
+        });
     }
 
     #[test]

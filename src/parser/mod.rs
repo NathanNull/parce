@@ -460,7 +460,6 @@ pub trait ParserIterator<Slice: TokenSlice + ?Sized, P: Parser<Slice>>:
         // Maybe it's fine though
 
         let init = ().map(|_| vec![]);
-        println!("Created null of type {}", type_name_of_val(&init));
         let init = init.box_clone();
 
         self.fold(init, |acc, p| {
