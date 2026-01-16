@@ -1,9 +1,9 @@
 use crate::parser;
 
-use super::{Parser, ParserIterator, RawParser};
+use super::{PFunc, Parser, ParserIterator};
 use fancy_regex::Regex;
 use itertools::Itertools;
-use std::{str::FromStr, sync::Arc};
+use std::{fmt::Debug, str::FromStr, sync::Arc};
 
 trait AsStr {
     fn chars(&self) -> impl Iterator<Item = char>;
@@ -18,7 +18,7 @@ impl AsStr for String {
         self.as_str().chars()
     }
 }
-impl<T: AsStr + Clone + Send + Sync + 'static> Parser<str> for T {
+impl<T: AsStr + Debug + Clone + Send + Sync + 'static> Parser<str> for T {
     type Out = (Arc<str>,);
 
     fn box_clone(&self) -> Arc<dyn Parser<str, Out = Self::Out>> {
@@ -51,7 +51,7 @@ fn regex_inner(regex: Regex) -> impl Fn(&str) -> Option<((Arc<str>,), &str)> + C
 
 pub fn p_regex(s: impl Into<String>) -> impl Parser<str, Out = (Arc<str>,)> {
     let regex = Regex::new(&s.into()).expect("Invalid regex argument");
-    RawParser::<str, (Arc<str>,)>(Arc::new(regex_inner(regex)))
+    PFunc::<str, (Arc<str>,)>(Arc::new(regex_inner(regex)))
 }
 
 pub fn p_alnum() -> impl Parser<str, Out = (Arc<str>,)> {

@@ -6,6 +6,8 @@ use crate::{
 };
 use fancy_regex::Regex;
 use std::{
+    any::type_name_of_val,
+    fmt::Debug,
     marker::PhantomData,
     ops::{Deref, Index},
     sync::{Arc, Weak},
@@ -14,8 +16,8 @@ use std::{
 pub mod recursive;
 pub mod stringbased;
 
-pub trait TokenSlice: RangeIndex + Send + Sync + 'static {
-    type Token: Send + Sync;
+pub trait TokenSlice: RangeIndex + Send + Sync + Debug + 'static {
+    type Token: ValidToken;
     fn is_empty(&self) -> bool;
     fn first(&self) -> Option<Self::Token>;
 }
@@ -29,7 +31,7 @@ impl TokenSlice for str {
         self.chars().next()
     }
 }
-impl<T: ValidToken + Clone + Send + Sync> TokenSlice for [T] {
+impl<T: ValidToken + Clone + Send + Sync + Debug> TokenSlice for [T] {
     type Token = T;
 
     fn is_empty(&self) -> bool {
@@ -41,7 +43,7 @@ impl<T: ValidToken + Clone + Send + Sync> TokenSlice for [T] {
     }
 }
 
-pub trait ValidToken: 'static {}
+pub trait ValidToken: Send + Sync + Debug + 'static {}
 impl ValidToken for char {}
 
 #[macro_export]
@@ -52,7 +54,7 @@ macro_rules! parser_token {
 }
 
 #[allow(unused)]
-pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
+pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync + Debug {
     type Out: Tuple + Send + Sync + 'static;
 
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>>;
@@ -64,15 +66,21 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
         self.parse_raw(input)
             .map(|(out, res)| (out.destructure(), res))
     }
-    fn parse_full(&self, input: &Slice) -> Option<<Self::Out as Tuple>::Destructured> {
-        let (out, res) = self.parse(input)?;
-        if res.is_empty() { Some(out) } else { None }
+    fn parse_full(&self, input: &Slice) -> Result<<Self::Out as Tuple>::Destructured, String> {
+        let (out, res) = self
+            .parse(input)
+            .ok_or_else(|| "Failed to parse".to_string())?;
+        if res.is_empty() {
+            Ok(out)
+        } else {
+            Err(format!("Some input remains: {res:?}"))
+        }
     }
-    fn and_raw<Rhs: Parser<Slice>>(self, rhs: Rhs) -> AndParser<Slice, Self, Rhs>
+    fn and_raw<Rhs: Parser<Slice>>(self, rhs: Rhs) -> PAnd<Slice, Self, Rhs>
     where
         Self: Sized,
     {
-        AndParser(self, rhs, PhantomData)
+        PAnd(self, rhs, PhantomData)
     }
     fn and<Rhs: Parser<Slice>>(
         self,
@@ -81,7 +89,7 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
     where
         Self: Sized,
     {
-        AndParser(self, rhs, PhantomData).map_raw(|(o1, o2)| Some(o1.concat(o2)))
+        PAnd(self, rhs, PhantomData).map_raw(|(o1, o2)| Some(o1.concat(o2)))
     }
     fn or<Rhs: Parser<Slice, Out = Self::Out>>(
         self,
@@ -90,7 +98,7 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
     where
         Self: Sized,
     {
-        OrParser(self, rhs, PhantomData)
+        POr(self, rhs, PhantomData)
     }
     fn mul(
         self,
@@ -99,7 +107,7 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
     where
         Self: Sized,
     {
-        MulParser(self, range.into(), PhantomData)
+        PMul(self, range.into(), PhantomData)
     }
     fn maybe(self) -> impl Parser<Slice, Out = (Option<<Self::Out as Tuple>::Destructured>,)>
     where
@@ -118,7 +126,7 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync {
     where
         Self: Sized,
     {
-        MapParser(self, Box::new(map))
+        PMap(self, Box::new(map))
     }
     fn try_map<
         T: Clone + Send + Sync + 'static,
@@ -218,15 +226,15 @@ impl<'b, Slice: TokenSlice + ?Sized, Out: Tuple + Send + Sync + 'static> Parser<
     }
 }
 
-impl<'b, Slice: TokenSlice + ?Sized, Out: Tuple + Send + Sync + 'static> Parser<Slice>
-    for Arc<dyn Parser<Slice, Out = Out> + 'b>
+impl<Slice: TokenSlice + ?Sized, Out: Tuple + Send + Sync + 'static> Parser<Slice>
+    for Arc<dyn Parser<Slice, Out = Out>>
 {
     type Out = Out;
     fn parse_raw<'a>(&self, input: &'a Slice) -> Option<(Self::Out, &'a Slice)> {
         self.deref().parse_raw(input)
     }
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
-        self.deref().box_clone()
+        self.clone()
     }
 }
 
@@ -261,7 +269,7 @@ macro_rules! box_clone {
 
         impl$(<$($gen:$($($bound)* + )?'static),+>)? Clone for Box<dyn $newname$(<$($gen),+>)? + 'static> {
             fn clone(&self) -> Self {
-                $newname::as_box(self)
+                $newname::as_box(self.as_ref())
             }
         }
     };
@@ -270,15 +278,21 @@ macro_rules! box_clone {
 box_clone!((pub) FnClone [Args,Out] : (Fn(Args)->Out) + Send + Sync);
 
 #[derive(Clone)]
-pub struct PredicateParser<Token: 'static>(Box<dyn FnClone<Token, bool>>);
+pub struct PPredicate<Token: 'static>(Box<dyn FnClone<Token, bool>>);
 
-impl<Token> PredicateParser<Token> {
+impl<Token: 'static> Debug for PPredicate<Token> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PPredicate")
+    }
+}
+
+impl<Token> PPredicate<Token> {
     pub fn new<F: FnClone<Token, bool> + 'static>(func: F) -> Self {
         Self(Box::new(func))
     }
 }
 
-impl<Slice: TokenSlice + ?Sized> Parser<Slice> for PredicateParser<Slice::Token>
+impl<Slice: TokenSlice + ?Sized> Parser<Slice> for PPredicate<Slice::Token>
 where
     Slice::Token: Clone,
 {
@@ -318,14 +332,22 @@ where
     }
 }
 
-pub struct AndParser<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, P2: Parser<Slice>>(
+pub struct PAnd<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, P2: Parser<Slice>>(
     P1,
     P2,
     PhantomData<Slice>,
 );
 
+impl<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, P2: Parser<Slice>> Debug
+    for PAnd<Slice, P1, P2>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PAnd").field(&self.0).field(&self.1).finish()
+    }
+}
+
 impl<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, P2: Parser<Slice>> Parser<Slice>
-    for AndParser<Slice, P1, P2>
+    for PAnd<Slice, P1, P2>
 {
     type Out = (P1::Out, P2::Out);
     fn parse_raw<'a>(&self, input: &'a Slice) -> Option<(Self::Out, &'a Slice)> {
@@ -334,15 +356,11 @@ impl<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, P2: Parser<Slice>> Parser<Sl
         Some(((o1, o2), res2))
     }
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
-        Arc::new(AndParser(
-            self.0.box_clone(),
-            self.1.box_clone(),
-            PhantomData,
-        ))
+        Arc::new(PAnd(self.0.box_clone(), self.1.box_clone(), PhantomData))
     }
 }
 
-pub struct OrParser<
+pub struct POr<
     Out: Tuple + 'static,
     Slice: TokenSlice + ?Sized,
     P1: Parser<Slice, Out = Out>,
@@ -354,7 +372,19 @@ impl<
     Slice: TokenSlice + ?Sized,
     P1: Parser<Slice, Out = Out>,
     P2: Parser<Slice, Out = Out>,
-> Parser<Slice> for OrParser<Out, Slice, P1, P2>
+> Debug for POr<Out, Slice, P1, P2>
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("POr").field(&self.0).field(&self.1).finish()
+    }
+}
+
+impl<
+    Out: Tuple + 'static,
+    Slice: TokenSlice + ?Sized,
+    P1: Parser<Slice, Out = Out>,
+    P2: Parser<Slice, Out = Out>,
+> Parser<Slice> for POr<Out, Slice, P1, P2>
 where
     Out: Send + Sync,
 {
@@ -363,17 +393,19 @@ where
         self.0.parse_raw(input).or_else(|| self.1.parse_raw(input))
     }
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
-        Arc::new(OrParser(
-            self.0.box_clone(),
-            self.1.box_clone(),
-            PhantomData,
-        ))
+        Arc::new(POr(self.0.box_clone(), self.1.box_clone(), PhantomData))
     }
 }
 
-pub struct MulParser<Slice: TokenSlice + ?Sized, P: Parser<Slice>>(P, Range, PhantomData<Slice>);
+pub struct PMul<Slice: TokenSlice + ?Sized, P: Parser<Slice>>(P, Range, PhantomData<Slice>);
 
-impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>> Parser<Slice> for MulParser<Slice, P> {
+impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>> Debug for PMul<Slice, P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("PMul").field(&self.0).field(&self.1).finish()
+    }
+}
+
+impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>> Parser<Slice> for PMul<Slice, P> {
     type Out = (Vec<<P::Out as Tuple>::Destructured>,);
 
     fn parse_raw<'a>(&self, mut input: &'a Slice) -> Option<(Self::Out, &'a Slice)> {
@@ -391,17 +423,23 @@ impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>> Parser<Slice> for MulParser<S
         }
     }
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
-        Arc::new(MulParser(self.0.box_clone(), self.1.clone(), PhantomData))
+        Arc::new(PMul(self.0.box_clone(), self.1.clone(), PhantomData))
     }
 }
 
-pub struct MapParser<Slice: TokenSlice + ?Sized, P: Parser<Slice>, Res: Tuple>(
+pub struct PMap<Slice: TokenSlice + ?Sized, P: Parser<Slice>, Res: Tuple>(
     P,
     Box<dyn FnClone<P::Out, Option<Res>>>,
 );
 
+impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>, Res: Tuple> Debug for PMap<Slice, P, Res> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Map({:?})", self.0)
+    }
+}
+
 impl<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, Res: Tuple + 'static> Parser<Slice>
-    for MapParser<Slice, P1, Res>
+    for PMap<Slice, P1, Res>
 {
     type Out = Res;
     fn parse_raw<'a>(&self, input: &'a Slice) -> Option<(Self::Out, &'a Slice)> {
@@ -410,7 +448,7 @@ impl<Slice: TokenSlice + ?Sized, P1: Parser<Slice>, Res: Tuple + 'static> Parser
             .and_then(|(out, res)| Some((self.1.get_ref()(out)?, res)))
     }
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
-        Arc::new(MapParser(self.0.box_clone(), self.1.clone()))
+        Arc::new(PMap(self.0.box_clone(), self.1.clone()))
     }
 }
 
@@ -419,7 +457,13 @@ pub trait ParserIterator<Slice: TokenSlice + ?Sized, P: Parser<Slice>>:
 {
     fn to_vec(self) -> impl Parser<Slice, Out = (Vec<<P::Out as Tuple>::Destructured>,)> {
         // There are too many boxes here for my liking
-        self.fold(().map(|_| vec![]).box_clone(), |acc, p| {
+        // Maybe it's fine though
+
+        let init = ().map(|_| vec![]);
+        println!("Created null of type {}", type_name_of_val(&init));
+        let init = init.box_clone();
+
+        self.fold(init, |acc, p| {
             acc.and_raw(p)
                 .map(|((mut v,), new)| {
                     v.push(new.destructure());
@@ -435,15 +479,22 @@ impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>, It: Iterator<Item = P>> Parse
 }
 
 box_clone!(ParseFn[TokenSlice: (?Sized), Out]: (Fn(&TokenSlice) -> Option<(Out, &TokenSlice)>) + Send + Sync);
-struct RawParser<Slice: TokenSlice + ?Sized, Out: Tuple + 'static>(Arc<dyn ParseFn<Slice, Out>>);
 
-impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Clone for RawParser<Slice, Out> {
+struct PFunc<Slice: TokenSlice + ?Sized, Out: Tuple + 'static>(Arc<dyn ParseFn<Slice, Out>>);
+
+impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Debug for PFunc<Slice, Out> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PFunc")
+    }
+}
+
+impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Clone for PFunc<Slice, Out> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
 }
 
-impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Parser<Slice> for RawParser<Slice, Out> {
+impl<Slice: TokenSlice + ?Sized, Out: Tuple + 'static> Parser<Slice> for PFunc<Slice, Out> {
     type Out = Out;
 
     fn box_clone(&self) -> Arc<dyn Parser<Slice, Out = Self::Out>> {
@@ -466,7 +517,7 @@ macro_rules! parser {
     };
     // Predicates
     (&$ty:ty: $c:ident >> $pred:expr) => {
-        $crate::parser::PredicateParser::new(|c: char|{
+        $crate::parser::PPredicate::new(|c: char|{
             let $c = c;
             $pred
         })

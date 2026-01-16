@@ -1,6 +1,7 @@
 use super::{Parser, ValidToken};
 use crate::{parser::TokenSlice, tuple::Tuple};
 use std::{
+    fmt::Debug,
     marker::PhantomData,
     sync::{Arc, Weak},
 };
@@ -10,8 +11,17 @@ pub struct Recursive<Slice: TokenSlice + ?Sized, P: Parser<Slice>> {
     _p: PhantomData<Slice>,
 }
 
-impl<Slice: TokenSlice + ?Sized + 'static, Out: Tuple + 'static, P: Parser<Slice, Out = Out> + 'static>
-    Parser<Slice> for Recursive<Slice, P>
+impl<Slice: TokenSlice + ?Sized, P: Parser<Slice>> Debug for Recursive<Slice, P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Recursive({:?})", self.inner)
+    }
+}
+
+impl<
+    Slice: TokenSlice + ?Sized + 'static,
+    Out: Tuple + 'static,
+    P: Parser<Slice, Out = Out> + 'static,
+> Parser<Slice> for Recursive<Slice, P>
 {
     type Out = Out;
 
@@ -30,7 +40,11 @@ impl<Slice: TokenSlice + ?Sized + 'static, Out: Tuple + 'static, P: Parser<Slice
     }
 }
 
-pub fn p_recursive<Slice: TokenSlice + ?Sized, Out: Tuple + 'static, P: Parser<Slice, Out = Out>>(
+pub fn p_recursive<
+    Slice: TokenSlice + ?Sized,
+    Out: Tuple + 'static,
+    P: Parser<Slice, Out = Out>,
+>(
     f: impl FnOnce(Recursive<Slice, P>) -> P,
 ) -> Arc<P> {
     Arc::<P>::new_cyclic(|arc| {

@@ -10,7 +10,6 @@ mod tests {
 
     #[test]
     fn basics() {
-        parser![(c >> c.is_numeric()), (c >> c.is_numeric())];
         let p = parser![
             ('c' >> |_| 15),
             (('h' * 3..=3)?),
@@ -21,29 +20,30 @@ mod tests {
             (!"abcde"),
             ('c'?)
         ];
+
         assert_eq!(
-            p.parse_full("c7bcc"),
-            Some((15, None, '7', 'b', 'c', Some('c')))
+            p.parse_full("c7bcabcdec"),
+            Ok((15, None, '7', 'b', 'c', Some('c')))
         );
         assert_eq!(
-            p.parse_full("chhh7bc"),
-            Some((15, Some(vec!['h'; 3]), '7', 'b', 'c', None))
+            p.parse_full("chhh7bcabcde"),
+            Ok((15, Some(vec!['h'; 3]), '7', 'b', 'c', None))
         );
-        assert_eq!(p.parse_full("test"), None);
+        assert!(p.parse_full("test").is_err());
     }
 
     #[test]
     fn array() {
         let p = parser!['c', 'd', 'e'];
-        assert_eq!(p.parse_full("ced"), None);
-        assert_eq!(p.parse_full("cde"), Some(('c', 'd', 'e')));
+        assert!(p.parse_full("ced").is_err());
+        assert_eq!(p.parse_full("cde"), Ok(('c', 'd', 'e')));
     }
 
     #[test]
     fn regex() {
         let p = parser!((r r"\w*") & !(r r"\r\n"));
-        assert_eq!(p.parse_full("as??df \r\n"), None);
-        assert_eq!(p.parse_full("asdf\r\n"), Some(Arc::from("asdf")));
+        assert!(p.parse_full("as??df \r\n").is_err());
+        assert_eq!(p.parse_full("asdf\r\n"), Ok(Arc::from("asdf")));
     }
 
     #[derive(Clone, PartialEq, Debug)]
@@ -55,8 +55,8 @@ mod tests {
         let p = parser!(&[TestToken]: (TestToken(0)) & (TestToken(1)));
         assert_eq!(
             p.parse_full(&[TestToken(0), TestToken(1)]),
-            Some((TestToken(0), TestToken(1)))
+            Ok((TestToken(0), TestToken(1)))
         );
-        assert_eq!(p.parse_full(&[TestToken(0), TestToken(2)]), None);
+        assert!(p.parse_full(&[TestToken(0), TestToken(2)]).is_err());
     }
 }

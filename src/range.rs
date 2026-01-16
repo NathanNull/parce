@@ -1,12 +1,25 @@
-use std::ops::{
+use std::{fmt::Debug, ops::{
     Index, Range as RangeBase, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive,
-};
+}};
 
 #[derive(Clone)]
 pub struct Range {
     pub min: usize,
     pub max: usize,
     range_type: RangeType,
+}
+
+impl Debug for Range {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.range_type {
+            RangeType::Base => write!(f, "{}..{}", self.min, self.max.saturating_add(1)),
+            RangeType::From => write!(f, "{}..", self.min),
+            RangeType::Full => write!(f, ".."),
+            RangeType::Inclusive => write!(f, "{}..={}", self.min, self.max),
+            RangeType::To => write!(f, "..{}", self.max.saturating_add(1)),
+            RangeType::ToInclusive => write!(f, "..={}", self.max),
+        }
+    }
 }
 
 #[derive(Clone)]
