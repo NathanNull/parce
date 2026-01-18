@@ -46,7 +46,7 @@ pub fn p_recursive<
     P: Parser<Slice, Out = Out> + 'static,
 >(
     f: impl FnOnce(Arc<dyn Parser<Slice, Out = Out>>) -> P,
-) -> Arc<P> {
+) -> Arc<dyn Parser<Slice, Out = Out>> {
     Arc::<P>::new_cyclic(|arc| {
         let rec = Recursive {
             inner: arc.clone(),

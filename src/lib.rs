@@ -15,7 +15,7 @@ mod tests {
             (('h' * 3..=3)?),
             ('c' | (c >> c.is_numeric())),
             'b',
-            (rec(|_| 'c')),
+            (rec<(char,)>(|_| 'c')),
             (),
             (!"abcde"),
             ('c'?)
@@ -34,10 +34,15 @@ mod tests {
 
     #[test]
     fn recursive() {
-        let p = p_recursive::<str, (String,), _>(|p| {
-            ' '.and(p.maybe())
+        let p1 = p_recursive::<str, (String,), _>(|p| {
+            'a'.and(p.maybe())
                 .map(|(c, rest)| c.to_string() + rest.unwrap_or(String::new()).as_str())
         });
+
+        let p2 = 'b'.and(p1);
+
+        assert_eq!(p2.parse_full("baaaaa"), Ok(('b', String::from("aaaaa"))));
+        assert!(p2.parse_full("aabaa").is_err());
     }
 
     #[test]

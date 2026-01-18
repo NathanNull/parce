@@ -3,6 +3,7 @@
 use crate::{
     range::{Range, RangeIndex},
     tuple::Tuple,
+    parser,
 };
 use fancy_regex::Regex;
 use std::{
@@ -89,7 +90,7 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync + Debug 
     where
         Self: Sized,
     {
-        PAnd(self, rhs, PhantomData).map_raw(|(o1, o2)| Some(o1.concat(o2)))
+        self.and_raw(rhs).map_raw(|(o1, o2)| Some(o1.concat(o2)))
     }
     fn or<Rhs: Parser<Slice, Out = Self::Out>>(
         self,
@@ -214,8 +215,8 @@ pub trait Parser<Slice: TokenSlice + ?Sized + Send + Sync>: Send + Sync + Debug 
     }
 }
 
-impl<'b, Slice: TokenSlice + ?Sized, Out: Tuple + Send + Sync + 'static> Parser<Slice>
-    for Box<dyn Parser<Slice, Out = Out> + 'b>
+impl<Slice: TokenSlice + ?Sized, Out: Tuple + Send + Sync + 'static> Parser<Slice>
+    for Box<dyn Parser<Slice, Out = Out>>
 {
     type Out = Out;
     fn parse_raw<'a>(&self, input: &'a Slice) -> Option<(Self::Out, &'a Slice)> {
@@ -542,8 +543,8 @@ macro_rules! parser {
         $crate::parser::Parser::<$ty>::map(parser!(&$ty: $lhs),$e)
     };
     // Recursive
-    (&$ty:ty: rec($($r:tt)+)) => {
-        *$crate::parser::recursive::p_recursive::<$ty,_,_>($($r)+)
+    (&$ty:ty: rec$(<$rt:ty>)?($($r:tt)+)) => {
+        $crate::parser::recursive::p_recursive::<$ty,$crate::first_type!($($rt,)?_),_>($($r)+)
     };
     // Repeat
     (&$ty:ty: $lhs: tt * $e:expr) => {
@@ -565,5 +566,12 @@ macro_rules! parser {
     };
     [$($tt:tt)*] => {
         parser!(&str: $($tt)*)
+    };
+}
+
+#[macro_export]
+macro_rules! first_type {
+    ($t:ty$(,$($_:tt)*)?) => {
+        $t
     };
 }
